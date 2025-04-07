@@ -1,0 +1,6 @@
+include:
+  - services/minio/docker-compose.yml
+  - services/rabbitmq/docker-compose.yml
+  - services/api/docker-compose.yml
+  - services/worker/docker-compose.yml
+  - services/flower/docker-compose.yml
