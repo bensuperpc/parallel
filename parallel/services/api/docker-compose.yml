@@ -1,0 +1,15 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: api
+    profiles:
+      - api
+    ports:
+      - "5500:5500"
+    env_file:
+      - ./env/variables.api.env
+    depends_on:
+      - rabbitmq
+      - minio

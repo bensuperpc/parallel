@@ -1,0 +1,4 @@
+Flask
+celery
+boto3
+loguru

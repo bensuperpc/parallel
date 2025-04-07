@@ -1,0 +1,15 @@
+FROM bensuperpc/multimedia:1.0.0-archlinux-base
+
+WORKDIR /app
+
+RUN pacman-key --init && pacman -Sy archlinux-keyring --noconfirm && pacman -Syu --noconfirm && \
+    pacman -S --noconfirm python-pip && \
+    pacman -Scc --noconfirm
+
+COPY requirements.txt .
+RUN pip install --break-system-packages -r requirements.txt
+
+COPY app.py app.py
+COPY tasks.py tasks.py
+
+ENTRYPOINT ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5500", "--workers", "4"]

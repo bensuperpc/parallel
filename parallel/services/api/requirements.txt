@@ -1,0 +1,7 @@
+Flask
+celery
+boto3
+loguru
+fastapi
+uvicorn
+python-multipart
