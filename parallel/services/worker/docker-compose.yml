@@ -1,0 +1,49 @@
+services:
+  worker-high:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - ./env/variables.worker.env
+    environment:
+      - CELERY_QUEUES=video.high
+    #container_name: worker-high
+    profiles:
+      - worker-high
+    depends_on:
+      - rabbitmq
+      - minio
+    deploy:
+      replicas: 2
+  worker-medium:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - ./env/variables.worker.env
+    environment:
+      - CELERY_QUEUES=video.medium
+    #container_name: worker-medium
+    profiles:
+      - worker-medium
+    depends_on:
+      - rabbitmq
+      - minio
+    deploy:
+      replicas: 2
+  worker-low:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    #container_name: worker-low
+    profiles:
+      - worker-low
+    env_file:
+      - ./env/variables.worker.env
+    environment:
+      - CELERY_QUEUES=video.low
+    depends_on:
+      - rabbitmq
+      - minio
+    deploy:
+      replicas: 2
