@@ -1,0 +1,16 @@
+services:
+  minio:
+    image: minio/minio
+    command: server /data
+    container_name: minio
+    profiles:
+      - minio
+    ports:
+      - "9000:9000"
+    env_file:
+      - ./env/variables.minio.env
+    volumes:
+      - minio-data:/data
+
+volumes:
+  minio-data:
