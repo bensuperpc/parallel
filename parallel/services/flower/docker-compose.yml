@@ -1,0 +1,13 @@
+services:
+  flower:
+    image: mher/flower
+    container_name: flower
+    environment:
+      - CELERY_BROKER_URL=amqp://user123:pass123@rabbitmq
+    profiles:
+      - flower
+    ports:
+      - "5555:5555"
+    command: celery flower --broker=amqp://user123:pass123@rabbitmq --port=5555 --basic_auth=admin:secret
+    depends_on:
+      - rabbitmq

@@ -1,0 +1,24 @@
+{
+    "files.associations": {
+        "*.h": "c",
+        "*.c": "c",
+        "*.cpp": "cpp",
+        "*.hpp": "cpp",
+        "*.cxx": "cpp",
+        "*.cc": "cpp",
+        "*.c++": "cpp",
+        "*.hxx": "cpp",
+        "*.h++": "cpp",
+        "*.py": "python"
+    },
+    "search.followSymlinks": false,
+    "files.exclude": {
+        "**/.git/objects/**": true,
+    },
+    "files.watcherExclude": {
+            "**/.git/objects/**": true,
+    },
+    "search.exclude": {
+            "**/.git/objects/**": true,
+    }
+}
