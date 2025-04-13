@@ -73,37 +73,6 @@ def clean_up_files(files):
             logger.error("Error during cleanup of {}: {}", f, cleanup_error)
 
 @celery_app.task
-def encode_video_task(s3_input_key : str, s3_output_key : str):
-    input_file = f"{TEMP_DIR}/{os.path.basename(s3_input_key)}"
-    output_file = f"{TEMP_DIR}/{os.path.basename(s3_output_key)}"
-
-    logger.info("Downloading file from S3: {}", s3_input_key)
-    s3.download_file(S3_BUCKET, s3_input_key, input_file, Config=transfer_config)
-
-    command = [
-        "ffmpeg",
-        "-i", input_file,
-        "-c:v", "libx264",
-        "-preset", "faster",
-        "-crf", "23",
-        "-c:a", "copy",
-        "-c:s", "copy",
-        "-map", "0",
-        "-map_metadata", "0",
-        "-map_chapters", "0",
-        output_file
-    ]
-    logger.info("Video encoding will start with command: {}", command)
-    try:
-        subprocess.run(command, check=True)
-        logger.info("Video encoding completed successfully")
-    except subprocess.CalledProcessError as e:
-        logger.error("Error during encoding: {}", e)
-
-    s3.upload_file(output_file, S3_BUCKET, s3_output_key, Config=transfer_config)
-    clean_up_files([input_file, output_file])
-
-@celery_app.task
 def encode_video_to_av1_task(s3_input_key : str, s3_output_key : str, preset : str = "2", crf : str = "16", option : str = "tune=0:enable-qm=1:qm-min=0:qm-max=8"):
     input_file = f"{TEMP_DIR}/{os.path.basename(s3_input_key)}"
     output_file = f"{TEMP_DIR}/{os.path.basename(s3_output_key)}"

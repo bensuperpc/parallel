@@ -5,7 +5,7 @@ import boto3
 from boto3.s3.transfer import TransferConfig
 from functools import wraps
 from flask import Flask, request, jsonify, send_file, abort
-from tasks import encode_video_task, encode_png_to_webp_task, encode_video_to_av1_task, celery_app
+from tasks import encode_png_to_webp_task, encode_video_to_av1_task, celery_app
 from loguru import logger
 
 app = Flask(__name__)
@@ -71,19 +71,33 @@ def upload():
         return jsonify({"error": "File not found"}), 400
     file = request.files['file']
     if file.filename == "":
+        logger.error("File name is empty")
         return jsonify({"error": "File name is empty"}), 400
 
-    priority = int(os.environ.get("DEFAULT_CELERY_TASK_PRIORITY", 5))
-    if 'priority' in request.files:
-        priority = int(request.form['priority'])
+    priority = int(request.args.get("priority", os.environ.get("DEFAULT_CELERY_TASK_PRIORITY", 5)))
     if priority < 0 or priority > 10:
+        logger.error("Invalid priority: {}", priority)
         return jsonify({"error": "Priority must be between 0 and 10"}), 400
     
-    routing_key = os.environ.get("DEFAULT_CELERY_ROUTING_KEY", "video.all")
-    if 'routing_key' in request.form:
-        routing_key = request.form['routing_key']
+    routing_key = request.args.get("routing_key", os.environ.get("DEFAULT_CELERY_ROUTING_KEY", "video.all"))
     if routing_key not in ["video.high", "video.low", "video.all"]:
+        logger.error("Invalid routing key: {}", routing_key)
         return jsonify({"error": "Invalid routing key"}), 400
+
+    compression_level = int(request.args.get("compression_level", os.environ.get("DEFAULT_COMPRESSION_LEVEL", 9)))
+    if compression_level < 0 or compression_level > 9:
+        logger.error("Invalid compression level: {}", compression_level)
+        return jsonify({"error": "Compression level must be between 0 and 9"}), 400
+    
+    preset = int(request.args.get("preset", os.environ.get("DEFAULT_PRESET", 2)))
+    if preset < 0 or preset > 13:
+        logger.error("Invalid preset: {}", preset)
+        return jsonify({"error": "Invalid preset"}), 400
+
+    crf = int(request.args.get("crf", os.environ.get("DEFAULT_CRF", 2)))
+    if crf < 0 or crf > 63:
+        logger.error("Invalid CRF: {}", crf)
+        return jsonify({"error": "Invalid CRF"}), 400
 
     file_id = str(uuid.uuid4())
     s3_input_key = f"input/{file_id}_{file.filename}"
@@ -97,17 +111,21 @@ def upload():
     if (file.filename.endswith(".png") or file.filename.endswith(".PNG")):
             s3_output_key = s3_output_key.replace(".png", ".webp")
             task = encode_png_to_webp_task.apply_async(
-            args=[s3_input_key, s3_output_key],
+            args=[str(s3_input_key), str(s3_output_key), str(compression_level)],
+            priority=priority,
+            routing_key=routing_key
+        )
+    elif (file.filename.endswith(".mp4") or file.filename.endswith(".mkv")
+          or file.filename.endswith(".avi") or file.filename.endswith(".mov")):
+        task = encode_video_to_av1_task.apply_async(
+            args=[str(s3_input_key), str(s3_output_key), str(preset), str(crf)],
             priority=priority,
             routing_key=routing_key
         )
     else:
-        # encode_video_to_av1_task
-        task = encode_video_task.apply_async(
-            args=[s3_input_key, s3_output_key],
-            priority=priority,
-            routing_key=routing_key
-        )
+        logger.error("Unsupported file type: {}", file.filename)
+        s3.delete_object(Bucket=S3_BUCKET, Key=s3_input_key)
+        return jsonify({"error": "Unsupported file type"}), 400
     
     logger.info("Task {} launched with priority {}", task.id, priority)
 
@@ -174,7 +192,7 @@ def workers():
         "worker_count": worker_count,
         "all_workers_available": all_available,
         "workers": workers_status
-    })
+    }), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True, port=API_PORT)
