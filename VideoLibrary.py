@@ -28,7 +28,7 @@ class VideoLibrary:
         """Download video file from the API.
         Like: curl -o video_encoded.mp4 "http://localhost:5500/download?s3_output_key=output/encoded_video.mp4&apikey=secret123"
         """
-        url = f"{download_endpoint}&s3_output_key={s3_output_key}"
+        url = f"{download_endpoint}?s3_output_key={s3_output_key}"
         BuiltIn().log(f"Downloading video from {url}", "INFO")
         headers = {"X-API-Key": api_key}
         response = requests.get(url, headers=headers)

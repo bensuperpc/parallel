@@ -20,5 +20,6 @@
     },
     "search.exclude": {
             "**/.git/objects/**": true,
-    }
+    },
+    "python-envs.pythonProjects": []
 }

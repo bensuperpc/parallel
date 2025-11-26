@@ -47,15 +47,22 @@ api_key_query = APIKeyQuery(name="apikey", auto_error=False)
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def require_api_key(
+    request: Request,
     apikey_query: str = Depends(api_key_query),
     apikey_header: str = Depends(api_key_header)
 ):
+    logger.debug("Authenticating request to {}", request.url.path)
+    logger.info(f"Headers reçus : {request.headers}")
+
+    # Affichage spécifique du header API
+    logger.info(f"Header X-API-Key reçu = {request.headers.get('X-API-Key')}")
+
     if apikey_query and not apikey_header:
         logger.warning("Using deprecated API key query parameter")
         
     apikey = apikey_query or apikey_header
     if apikey != API_KEY:
-        logger.warning("Forbidden access: API key is missing or invalid")
+        logger.warning("Forbidden access: API key is missing or invalid: {}", apikey)
         raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Forbidden access")
     return apikey
 
@@ -97,7 +104,7 @@ async def upload(
         logger.warning("Invalid routing key: {}", routing_key)
         raise HTTPException(status_code=400, detail="Invalid routing key")
 
-    file_id = str(uuid.uuid4())
+    file_id = "2dbb749b-e7a1-4125-a669-624201291ac8"
     s3_input_key = f"input/{file_id}_{file.filename}"
     s3_output_key = f"output/{file_id}_encoded_{file.filename}"
 

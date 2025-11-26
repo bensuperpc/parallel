@@ -12,11 +12,11 @@ ${FLOWER_URL}          http://localhost:5555
 
 ${API_KEY}             secret123
 
-${UPLOAD_ENDPOINT}             ${API_URL}/upload?apikey=${API_KEY}
-${DOWNLOAD_ENDPOINT}           ${API_URL}/download?apikey=${API_KEY}
-${API_STATUS_ENDPOINT}         ${API_URL}/status/api?apikey=${API_KEY}
-${WORKER_STATUS_ENDPOINT}      ${API_URL}/status/worker?apikey=${API_KEY}
-${CLEANUP_STORAGE_ENDPOINT}    ${API_URL}/clear_storage?apikey=${API_KEY}
+${UPLOAD_ENDPOINT}             ${API_URL}/upload
+${DOWNLOAD_ENDPOINT}           ${API_URL}/download
+${API_STATUS_ENDPOINT}         ${API_URL}/status/api
+${WORKER_STATUS_ENDPOINT}      ${API_URL}/status/worker
+${CLEANUP_STORAGE_ENDPOINT}    ${API_URL}/clear_storage
 
 *** Keywords ***
 
@@ -42,7 +42,8 @@ Wait Until One Worker Is Connected
 
 Check All Workers Are Available
     [Arguments]    ${api_url}
-    ${response}    GET    ${api_url}
+    ${headers}=    Create Dictionary    X-API-Key=secret123
+    ${response}    GET    ${api_url}    headers=${headers}
     Run Keyword If    ${response.status_code} != 200    Fail    Request failed with code ${response.status_code}
     ${worker_status}    Set Variable    ${response.json()}
     Log    Worker status: ${worker_status}
