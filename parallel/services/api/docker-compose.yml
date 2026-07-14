@@ -13,7 +13,7 @@ services:
       - ./env/variables.api.env
     depends_on:
       - rabbitmq
-      - minio
+      - seaweedfs
       - valkey
     dns:
       - 1.1.1.1

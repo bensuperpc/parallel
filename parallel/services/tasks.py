@@ -53,18 +53,18 @@ celery_app.conf.result_expires = 60 * 60 * 24
 
 celery_app.control.mailbox.queue_exclusive = True
 
-S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://minio:9000")
+S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://seaweedfs:9000")
 S3_BUCKET = os.environ.get("S3_BUCKET", "videos")
-MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "minio")
-MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "minio123")
+S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "minio")
+S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "minio123")
 
 TEMP_DIR = os.environ.get("TEMP_DIR", "/tmp")
 
 s3 = boto3.client(
     "s3",
     endpoint_url=S3_ENDPOINT,
-    aws_access_key_id=MINIO_ACCESS_KEY,
-    aws_secret_access_key=MINIO_SECRET_KEY,
+    aws_access_key_id=S3_ACCESS_KEY,
+    aws_secret_access_key=S3_SECRET_KEY,
     region_name="us-east-1"
 )
 

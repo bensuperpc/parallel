@@ -18,10 +18,10 @@ from celery.result import AsyncResult
 from tasks import celery_app, encode_png_to_webp_task, encode_video_to_av1_task
 
 # --- Config ---
-S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://minio:9000")
+S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://seaweedfs:9000")
 S3_BUCKET = os.environ.get("S3_BUCKET", "videos")
-MINIO_ACCESS_KEY = os.environ.get("MINIO_ACCESS_KEY", "minio")
-MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "minio123")
+S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "minio")
+S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "minio123")
 
 API_KEY = os.environ.get("API_KEY", "defaultkey")
 API_PORT = int(os.environ.get("API_PORT", 5500))
@@ -48,8 +48,8 @@ app.add_middleware(SlowAPIMiddleware)
 s3 = boto3.client(
     "s3",
     endpoint_url=S3_ENDPOINT,
-    aws_access_key_id=MINIO_ACCESS_KEY,
-    aws_secret_access_key=MINIO_SECRET_KEY,
+    aws_access_key_id=S3_ACCESS_KEY,
+    aws_secret_access_key=S3_SECRET_KEY,
     region_name="us-east-1"
 )
 

@@ -13,7 +13,7 @@ services:
       - worker-high
     depends_on:
       - rabbitmq
-      - minio
+      - seaweedfs
       - valkey
     deploy:
       replicas: 2
@@ -34,7 +34,7 @@ services:
       - CELERY_QUEUES=video.low,video.all
     depends_on:
       - rabbitmq
-      - minio
+      - seaweedfs
       - valkey
     deploy:
       replicas: 2

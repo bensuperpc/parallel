@@ -13,6 +13,6 @@
 
 PROJECT_DIRECTORY := parallel
 
-DOCKER_PROFILES := rabbitmq minio valkey api flower worker-low worker-high
+DOCKER_PROFILES := rabbitmq seaweedfs valkey api flower worker-low worker-high
 
 include DockerCompose.mk

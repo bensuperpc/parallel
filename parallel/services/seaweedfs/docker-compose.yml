@@ -1,18 +1,37 @@
 services:
-  minio:
-    image: minio/minio
-    command: server /data
-    container_name: minio
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs
     profiles:
-      - minio
+      - seaweedfs
     ports:
       - "9000:9000"
     env_file:
-      - ./env/variables.minio.env
+      - ./env/variables.seaweedfs.env
     volumes:
-      - minio-data:/data
+      - seaweedfs-data:/data
+    entrypoint: ["/bin/sh", "-c"]
+    # SeaweedFS reads S3 identities from a config file, not env vars directly, so the
+    # identity is generated at startup from S3_ACCESS_KEY/S3_SECRET_KEY (env_file above).
+    command:
+      - |
+        set -eu
+        cat > /tmp/s3.json <<JSONEOF
+        {
+          "identities": [
+            {
+              "name": "app",
+              "credentials": [
+                {"accessKey": "$$S3_ACCESS_KEY", "secretKey": "$$S3_SECRET_KEY"}
+              ],
+              "actions": ["Admin", "Read", "Write"]
+            }
+          ]
+        }
+        JSONEOF
+        exec weed mini -dir=/data -s3.port=9000 -s3.config=/tmp/s3.json
     dns:
       - 1.1.1.1
       - 8.8.8.8
 volumes:
-  minio-data:
+  seaweedfs-data:
