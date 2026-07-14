@@ -58,4 +58,3 @@ robot --randomize all tests.robot
 - [FFMPEG](https://ffmpeg.org/)
 - [RabbitMQ](https://www.rabbitmq.com/)
 - [Celery](https://docs.celeryproject.org/en/stable/)
-- [Flask](https://flask.palletsprojects.com/)

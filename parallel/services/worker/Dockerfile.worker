@@ -6,11 +6,10 @@ RUN pacman-key --init && pacman -Sy archlinux-keyring --noconfirm && pacman -Syu
     pacman -S --noconfirm python-pip && \
     pacman -Scc --noconfirm
 
-COPY requirements.txt .
+COPY worker/requirements.txt .
 RUN pip install --break-system-packages -r requirements.txt
 
-WORKDIR /app
-
-COPY start_worker.py start_worker.py
+COPY worker/start_worker.py start_worker.py
+COPY tasks.py tasks.py
 
 ENTRYPOINT ["python3", "start_worker.py"]

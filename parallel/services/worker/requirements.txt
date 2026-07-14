@@ -1,4 +1,4 @@
-Flask
 celery
+redis
 boto3
 loguru

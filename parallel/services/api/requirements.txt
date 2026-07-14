@@ -1,7 +1,9 @@
-Flask
 celery
+redis
 boto3
 loguru
 fastapi
 uvicorn
 python-multipart
+httpx
+slowapi

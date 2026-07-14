@@ -1,8 +1,9 @@
 services:
   worker-high:
     build:
-      context: .
-      dockerfile: Dockerfile.worker
+      context: ..
+      dockerfile: worker/Dockerfile.worker
+      network: host
     env_file:
       - ./env/variables.worker.env
     environment:
@@ -13,12 +14,17 @@ services:
     depends_on:
       - rabbitmq
       - minio
+      - valkey
     deploy:
       replicas: 2
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
   worker-low:
     build:
-      context: .
-      dockerfile: Dockerfile.worker
+      context: ..
+      dockerfile: worker/Dockerfile.worker
+      network: host
     #container_name: worker-low
     profiles:
       - worker-low
@@ -29,5 +35,9 @@ services:
     depends_on:
       - rabbitmq
       - minio
+      - valkey
     deploy:
       replicas: 2
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8

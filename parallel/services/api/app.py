@@ -1,15 +1,21 @@
 import os
 import uuid
+from typing import IO
 import boto3
+import httpx
 from boto3.s3.transfer import TransferConfig
 from fastapi import FastAPI, File, UploadFile, Depends, Query, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.security.api_key import APIKeyQuery
 from fastapi.security import APIKeyHeader
 from starlette.requests import Request
 from starlette.status import HTTP_403_FORBIDDEN
 from loguru import logger
-from tasks import encode_png_to_webp_task, encode_video_to_av1_task, celery_app
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from celery.result import AsyncResult
+from tasks import celery_app, encode_png_to_webp_task, encode_video_to_av1_task
 
 # --- Config ---
 S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://minio:9000")
@@ -20,8 +26,24 @@ MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "minio123")
 API_KEY = os.environ.get("API_KEY", "defaultkey")
 API_PORT = int(os.environ.get("API_PORT", 5500))
 
+RABBITMQ_MGMT_URL = os.environ.get("RABBITMQ_MGMT_URL", "http://rabbitmq:15672")
+RABBITMQ_USER = os.environ.get("RABBITMQ_USER", "user123")
+RABBITMQ_PASS = os.environ.get("RABBITMQ_PASS", "pass123")
+
+RATE_LIMIT_DEFAULT = os.environ.get("API_RATE_LIMIT_DEFAULT", "120/minute")
+RATE_LIMIT_UPLOAD = os.environ.get("API_RATE_LIMIT_UPLOAD", "20/minute")
+
+MAX_UPLOAD_SIZE_BYTES = int(os.environ.get("MAX_UPLOAD_SIZE_BYTES", 2 * 1024 * 1024 * 1024))
+
+_TASK_QUEUE_NAMES = frozenset({"video.high", "video.low", "video.all"})
+
 # --- Init ---
 app = FastAPI(title="Encoding API")
+
+limiter = Limiter(key_func=get_remote_address, default_limits=[RATE_LIMIT_DEFAULT])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 s3 = boto3.client(
     "s3",
@@ -42,39 +64,37 @@ try:
 except Exception as e:
     logger.info("Bucket {} already exists or error: {}", S3_BUCKET, e)
 
-# --- API Key dependency ---
-api_key_query = APIKeyQuery(name="apikey", auto_error=False)
+class UploadTooLarge(Exception):
+    pass
+
+class SizeLimitedFile:
+    """Wraps an upload's file object so streaming to S3 aborts once max_bytes is exceeded."""
+    def __init__(self, fileobj: IO[bytes], max_bytes: int):
+        self._fileobj = fileobj
+        self._max_bytes = max_bytes
+        self._read_bytes = 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk: bytes = self._fileobj.read(size)
+        self._read_bytes += len(chunk)
+        if self._read_bytes > self._max_bytes:
+            raise UploadTooLarge()
+        return chunk
+
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def require_api_key(
     request: Request,
-    apikey_query: str = Depends(api_key_query),
     apikey_header: str = Depends(api_key_header)
 ):
     logger.debug("Authenticating request to {}", request.url.path)
-    logger.info(f"Headers reçus : {request.headers}")
 
-    # Affichage spécifique du header API
-    logger.info(f"Header X-API-Key reçu = {request.headers.get('X-API-Key')}")
-
-    if apikey_query and not apikey_header:
-        logger.warning("Using deprecated API key query parameter")
-        
-    apikey = apikey_query or apikey_header
-    if apikey != API_KEY:
-        logger.warning("Forbidden access: API key is missing or invalid: {}", apikey)
+    if apikey_header != API_KEY:
+        logger.warning("Forbidden access: API key is missing or invalid")
         raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Forbidden access")
-    return apikey
+    return apikey_header
 
 # --- Routes ---
-
-@app.get("/download_script")
-async def download_script(_: str = Depends(require_api_key)):
-    script_path = os.path.join(os.path.dirname(__file__), "tasks.py")
-    if not os.path.exists(script_path):
-        logger.error("Script file not found: {}", script_path)
-        raise HTTPException(status_code=404, detail="Script file not found")
-    return FileResponse(script_path, filename="tasks.py")
 
 @app.get("/clear_storage")
 async def clear_storage(_: str = Depends(require_api_key)):
@@ -91,7 +111,9 @@ async def clear_storage(_: str = Depends(require_api_key)):
         raise HTTPException(status_code=500, detail="Failed to clear storage")
 
 @app.post("/upload")
+@limiter.limit(RATE_LIMIT_UPLOAD)
 async def upload(
+    request: Request,
     file: UploadFile = File(...),
     priority: int = Query(default=int(os.environ.get("DEFAULT_CELERY_TASK_PRIORITY", 5)), ge=0, le=10),
     routing_key: str = Query(default=os.environ.get("DEFAULT_CELERY_ROUTING_KEY", "video.all")),
@@ -104,11 +126,20 @@ async def upload(
         logger.warning("Invalid routing key: {}", routing_key)
         raise HTTPException(status_code=400, detail="Invalid routing key")
 
-    file_id = "2dbb749b-e7a1-4125-a669-624201291ac8"
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_UPLOAD_SIZE_BYTES:
+        logger.warning("Upload rejected, declared size {} exceeds limit {}", content_length, MAX_UPLOAD_SIZE_BYTES)
+        raise HTTPException(status_code=413, detail=f"File exceeds max upload size of {MAX_UPLOAD_SIZE_BYTES} bytes")
+
+    file_id = str(uuid.uuid4())
     s3_input_key = f"input/{file_id}_{file.filename}"
     s3_output_key = f"output/{file_id}_encoded_{file.filename}"
 
-    s3.upload_fileobj(file.file, S3_BUCKET, s3_input_key, Config=transfer_config)
+    try:
+        s3.upload_fileobj(SizeLimitedFile(file.file, MAX_UPLOAD_SIZE_BYTES), S3_BUCKET, s3_input_key, Config=transfer_config)
+    except UploadTooLarge:
+        logger.warning("Upload rejected, stream exceeded limit of {} bytes", MAX_UPLOAD_SIZE_BYTES)
+        raise HTTPException(status_code=413, detail=f"File exceeds max upload size of {MAX_UPLOAD_SIZE_BYTES} bytes")
     logger.info("File {} uploaded under key {}", file.filename, s3_input_key)
 
     task = None
@@ -138,6 +169,16 @@ async def upload(
         "priority": priority
     }
 
+@app.get("/status/task/{task_id}")
+async def task_status(task_id: str, _: str = Depends(require_api_key)):
+    result = AsyncResult(task_id, app=celery_app)
+    response = {"task_id": task_id, "state": result.state}
+    if result.state == "FAILURE":
+        response["error"] = str(result.result)
+    elif result.state == "SUCCESS":
+        response["result"] = result.result
+    return response
+
 @app.get("/download")
 async def download(s3_output_key: str = Query(...), _: str = Depends(require_api_key)):
     local_file = f"/tmp/{os.path.basename(s3_output_key)}"
@@ -155,36 +196,50 @@ async def status(_: str = Depends(require_api_key)):
 
 @app.get("/status/worker")
 async def workers(_: str = Depends(require_api_key)):
-    inspector = celery_app.control.inspect(timeout=0.5)
+    try:
+        async with httpx.AsyncClient() as client:
+            consumers_resp = await client.get(
+                f"{RABBITMQ_MGMT_URL}/api/consumers/%2F",
+                auth=(RABBITMQ_USER, RABBITMQ_PASS),
+                timeout=5.0,
+            )
+            consumers_resp.raise_for_status()
+            queues_resp = await client.get(
+                f"{RABBITMQ_MGMT_URL}/api/queues/%2F",
+                auth=(RABBITMQ_USER, RABBITMQ_PASS),
+                timeout=5.0,
+            )
+            queues_resp.raise_for_status()
+    except Exception as e:
+        logger.error("Failed to query RabbitMQ management API: {}", e)
+        raise HTTPException(status_code=503, detail="Unable to reach RabbitMQ management API")
 
-    worker_pings = inspector.ping() or {}
-    active_tasks = inspector.active() or {}
-    reserved_tasks = inspector.reserved() or {}
-    scheduled_tasks = inspector.scheduled() or {}
+    consumers = consumers_resp.json()
+    queues = queues_resp.json()
 
-    worker_count = len(worker_pings)
-    workers_status = {}
-    all_available = True
+    worker_connections: set[str] = set()
+    for consumer in consumers:
+        queue_name = consumer.get("queue", {}).get("name", "")
+        if queue_name in _TASK_QUEUE_NAMES:
+            conn_name = consumer.get("channel_details", {}).get("connection_name", "")
+            if conn_name:
+                worker_connections.add(conn_name)
 
-    for worker in worker_pings:
-        active = active_tasks.get(worker, [])
-        reserved = reserved_tasks.get(worker, [])
-        scheduled = scheduled_tasks.get(worker, [])
+    worker_count = len(worker_connections)
 
-        is_busy = bool(active or reserved or scheduled)
-        if is_busy:
-            all_available = False
-
-        workers_status[worker] = {
-            "ping": "ok",
-            "active_tasks": len(active),
-            "reserved_tasks": len(reserved),
-            "scheduled_tasks": len(scheduled),
-            "status": "busy" if is_busy else "available"
-        }
+    total_unacked = sum(
+        q.get("messages_unacknowledged", 0)
+        for q in queues
+        if q.get("name") in _TASK_QUEUE_NAMES
+    )
+    total_ready = sum(
+        q.get("messages_ready", 0)
+        for q in queues
+        if q.get("name") in _TASK_QUEUE_NAMES
+    )
+    all_available = (total_unacked == 0) and (total_ready == 0)
 
     return {
         "worker_count": worker_count,
         "all_workers_available": all_available,
-        "workers": workers_status
     }

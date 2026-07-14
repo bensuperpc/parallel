@@ -11,3 +11,6 @@ services:
     command: celery flower --broker=amqp://user123:pass123@rabbitmq --port=5555 --basic_auth=admin:secret
     depends_on:
       - rabbitmq
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8

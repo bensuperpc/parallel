@@ -1,6 +1,5 @@
 import os
 import subprocess
-import logging
 import boto3
 from boto3.s3.transfer import TransferConfig
 
@@ -8,11 +7,12 @@ from celery import Celery
 from kombu import Exchange, Queue
 from loguru import logger
 
-broker_url = os.environ.get("CELERY_BROKER_URL", "amqp://user123:pass123@rabbitmq")
+broker_url = os.environ.get("CELERY_BROKER_URL", "amqp://user123:pass123@rabbitmq:5672//")
+result_backend = os.environ.get("CELERY_RESULT_BACKEND", "redis://valkey:6379/0")
 
 celery_exchange = os.environ.get("CELERY_EXCHANGE", "video")
 
-celery_app = Celery('tasks', broker=broker_url)
+celery_app = Celery('tasks', broker=broker_url, backend=result_backend)
 
 video_exchange = Exchange(celery_exchange, type='topic')
 
@@ -21,19 +21,19 @@ celery_app.conf.task_queues = (
         'video.high',
         exchange=video_exchange,
         routing_key='video.high',
-        queue_arguments={'x-max-priority': 10}
+        queue_arguments={'x-max-priority': 10, 'x-queue-type': 'classic'}
     ),
     Queue(
         'video.low',
         exchange=video_exchange,
         routing_key='video.low',
-        queue_arguments={'x-max-priority': 10}
+        queue_arguments={'x-max-priority': 10, 'x-queue-type': 'classic'}
     ),
     Queue(
         'video.all',
         exchange=video_exchange,
         routing_key='video.all',
-        queue_arguments={'x-max-priority': 10}
+        queue_arguments={'x-max-priority': 10, 'x-queue-type': 'classic'}
     )
 )
 
@@ -41,6 +41,17 @@ celery_app.conf.task_default_queue = 'video.all'
 celery_app.conf.task_default_exchange = 'video'
 celery_app.conf.task_default_exchange_type = 'topic'
 celery_app.conf.task_default_routing_key = 'video.all'
+celery_app.conf.broker_connection_retry_on_startup = True
+celery_app.conf.broker_heartbeat = 60
+celery_app.conf.broker_transport_options = {'confirm_publish': True}
+
+celery_app.conf.task_acks_late = True
+celery_app.conf.task_reject_on_worker_lost = True
+celery_app.conf.worker_prefetch_multiplier = 1
+
+celery_app.conf.result_expires = 60 * 60 * 24
+
+celery_app.control.mailbox.queue_exclusive = True
 
 S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "http://minio:9000")
 S3_BUCKET = os.environ.get("S3_BUCKET", "videos")
@@ -63,6 +74,15 @@ transfer_config = TransferConfig(
     max_concurrency=10,
 )
 
+RETRYABLE_TASK_KWARGS = dict(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,
+    retry_jitter=True,
+    max_retries=3,
+)
+
 def clean_up_files(files):
     for f in files:
         try:
@@ -72,8 +92,8 @@ def clean_up_files(files):
         except Exception as cleanup_error:
             logger.error("Error during cleanup of {}: {}", f, cleanup_error)
 
-@celery_app.task
-def encode_video_to_av1_task(s3_input_key : str, s3_output_key : str, preset : str = "2", crf : str = "16", option : str = "tune=0:enable-qm=1:qm-min=0:qm-max=8"):
+@celery_app.task(**RETRYABLE_TASK_KWARGS)
+def encode_video_to_av1_task(self, s3_input_key: str, s3_output_key: str, preset: str = "2", crf: str = "16", option: str = "tune=0:enable-qm=1:qm-min=0:qm-max=8"):
     input_file = f"{TEMP_DIR}/{os.path.basename(s3_input_key)}"
     output_file = f"{TEMP_DIR}/{os.path.basename(s3_output_key)}"
 
@@ -102,12 +122,15 @@ def encode_video_to_av1_task(s3_input_key : str, s3_output_key : str, preset : s
         logger.info("Video encoding completed successfully")
     except subprocess.CalledProcessError as e:
         logger.error("Error during encoding: {}", e)
+        clean_up_files([input_file, output_file])
+        raise
 
     s3.upload_file(output_file, S3_BUCKET, s3_output_key, Config=transfer_config)
     clean_up_files([input_file, output_file])
+    return {"s3_output_key": s3_output_key}
 
-@celery_app.task
-def encode_png_to_webp_task(s3_input_key : str, s3_output_key : str, compression_level : str = "9"):
+@celery_app.task(**RETRYABLE_TASK_KWARGS)
+def encode_png_to_webp_task(self, s3_input_key: str, s3_output_key: str, compression_level: str = "9"):
     input_file = f"{TEMP_DIR}/{os.path.basename(s3_input_key)}"
     output_file = f"{TEMP_DIR}/{os.path.basename(s3_output_key)}"
     output_file = output_file.replace(".png", ".webp")
@@ -132,6 +155,9 @@ def encode_png_to_webp_task(s3_input_key : str, s3_output_key : str, compression
         logger.info("Image encoding completed successfully")
     except subprocess.CalledProcessError as e:
         logger.error("Error during encoding: {}", e)
+        clean_up_files([input_file, output_file])
+        raise
 
     s3.upload_file(output_file, S3_BUCKET, s3_output_key, Config=transfer_config)
     clean_up_files([input_file, output_file])
+    return {"s3_output_key": s3_output_key}

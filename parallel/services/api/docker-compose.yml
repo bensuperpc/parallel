@@ -1,8 +1,9 @@
 services:
   api:
     build:
-      context: .
-      dockerfile: Dockerfile.api
+      context: ..
+      dockerfile: api/Dockerfile.api
+      network: host
     container_name: api
     profiles:
       - api
@@ -13,3 +14,7 @@ services:
     depends_on:
       - rabbitmq
       - minio
+      - valkey
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8

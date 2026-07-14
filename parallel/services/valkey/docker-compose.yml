@@ -1,0 +1,11 @@
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: valkey
+    profiles:
+      - valkey
+    volumes:
+      - valkey-data:/data
+    command: valkey-server --save 60 1
+volumes:
+  valkey-data:
