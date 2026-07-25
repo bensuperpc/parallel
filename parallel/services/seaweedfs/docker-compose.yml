@@ -30,8 +30,14 @@ services:
         }
         JSONEOF
         exec weed mini -dir=/data -s3.port=9000 -s3.config=/tmp/s3.json
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
+    restart: unless-stopped
+    # No healthcheck here: this is a third-party minimal image and we can't be sure it
+    # ships a tool to probe an HTTP/TCP port with. depends_on below therefore only
+    # waits for the container to start, not for it to actually be ready.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
 volumes:
   seaweedfs-data:

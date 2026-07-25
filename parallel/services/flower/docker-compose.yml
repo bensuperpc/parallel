@@ -2,15 +2,26 @@ services:
   flower:
     image: mher/flower
     container_name: flower
-    environment:
-      - CELERY_BROKER_URL=amqp://user123:pass123@rabbitmq
+    env_file:
+      - ./env/variables.flower.env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - exec celery flower --broker="amqp://$$RABBITMQ_USER:$$RABBITMQ_PASS@$$RABBITMQ_HOST" --port=5555 --basic_auth="$$FLOWER_BASIC_AUTH_USER:$$FLOWER_BASIC_AUTH_PASS"
     profiles:
       - flower
     ports:
       - "5555:5555"
-    command: celery flower --broker=amqp://user123:pass123@rabbitmq --port=5555 --basic_auth=admin:secret
     depends_on:
       - rabbitmq
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('localhost', 5555), timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M

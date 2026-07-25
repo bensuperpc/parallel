@@ -2,14 +2,20 @@ FROM bensuperpc/multimedia:1.0.0-archlinux-base
 
 WORKDIR /app
 
-RUN pacman-key --init && pacman -Sy archlinux-keyring --noconfirm && pacman -Syu --noconfirm && \
-    pacman -S --noconfirm python-pip && \
-    pacman -Scc --noconfirm
+# See api/Dockerfile.api for why this intentionally does not run `pacman -Syu`.
+RUN pacman-key --init && \
+    pacman -Sy --noconfirm python-pip && \
+    pacman -Scc --noconfirm && \
+    useradd --system --create-home --shell /usr/sbin/nologin appuser
 
 COPY worker/requirements.txt .
-RUN pip install --break-system-packages -r requirements.txt
+RUN pip install --break-system-packages --no-cache-dir -r requirements.txt
 
-COPY worker/start_worker.py start_worker.py
-COPY tasks.py tasks.py
+COPY common/ common/
+COPY tasks/ tasks/
+COPY worker/start_worker.py worker/
 
-ENTRYPOINT ["python3", "start_worker.py"]
+RUN chown -R appuser:appuser /app
+USER appuser
+
+ENTRYPOINT ["python3", "worker/start_worker.py"]

@@ -7,3 +7,6 @@ report.html
 log.html
 
 interactive_console_output.xml
+
+# Local secrets materialized from *.env.example templates by scripts/init_env.py
+parallel/services/**/env/*.env

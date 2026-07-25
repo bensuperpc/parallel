@@ -2,14 +2,25 @@ FROM bensuperpc/multimedia:1.0.0-archlinux-base
 
 WORKDIR /app
 
-RUN pacman-key --init && pacman -Sy archlinux-keyring --noconfirm && pacman -Syu --noconfirm && \
-    pacman -S --noconfirm python-pip && \
-    pacman -Scc --noconfirm
+# Only sync the package database and install python-pip -- deliberately no `pacman
+# -Syu` (full system upgrade) here: this base image is Arch Linux, a rolling-release
+# distro, so upgrading the whole system at build time makes every build non-reproducible
+# (the same Dockerfile can produce a different image every day). This does not fully
+# solve reproducibility since the base image tag itself can still drift upstream, but it
+# removes the extra drift this repository was introducing on top of that.
+RUN pacman-key --init && \
+    pacman -Sy --noconfirm python-pip && \
+    pacman -Scc --noconfirm && \
+    useradd --system --create-home --shell /usr/sbin/nologin appuser
 
 COPY api/requirements.txt .
-RUN pip install --break-system-packages -r requirements.txt
+RUN pip install --break-system-packages --no-cache-dir -r requirements.txt
 
-COPY api/app.py app.py
-COPY tasks.py tasks.py
+COPY common/ common/
+COPY api/__init__.py api/app.py api/config.py api/security.py api/schemas.py api/media_handlers.py api/uploads.py api/rate_limit.py api/
+COPY api/routers/ api/routers/
 
-ENTRYPOINT ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5500", "--workers", "4"]
+RUN chown -R appuser:appuser /app
+USER appuser
+
+ENTRYPOINT ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "5500", "--workers", "4"]

@@ -12,9 +12,21 @@ services:
     env_file:
       - ./env/variables.api.env
     depends_on:
-      - rabbitmq
-      - seaweedfs
-      - valkey
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
+      rabbitmq:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+      valkey:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5500/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M

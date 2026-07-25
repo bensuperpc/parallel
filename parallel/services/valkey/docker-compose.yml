@@ -4,8 +4,27 @@ services:
     container_name: valkey
     profiles:
       - valkey
+    env_file:
+      - ./env/variables.valkey.env
     volumes:
       - valkey-data:/data
-    command: valkey-server --save 60 1
+    entrypoint: ["/bin/sh", "-c"]
+    # requirepass can't come from a plain `command:` var substitution (env_file vars
+    # aren't visible to Compose's own ${...} interpolation, only inside the container),
+    # so it's read from the container's own env at startup instead, same pattern as
+    # seaweedfs/flower's identity/auth setup.
+    command:
+      - exec valkey-server --save 60 1 --requirepass "$$VALKEY_PASS"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a \"$$VALKEY_PASS\" --no-auth-warning ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 volumes:
   valkey-data:

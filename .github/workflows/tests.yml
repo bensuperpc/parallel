@@ -1,0 +1,29 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  robot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      # Drives make start/make stop itself (see keywords.robot Suite Setup/Teardown).
+      - run: robot --randomize all tests.robot
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: robot-report
+          path: |
+            log.html
+            report.html
+            output.xml

@@ -8,24 +8,33 @@ services:
       - ./env/variables.worker.env
     environment:
       - CELERY_QUEUES=video.high,video.all
-    #container_name: worker-high
     profiles:
       - worker-high
     depends_on:
-      - rabbitmq
-      - seaweedfs
-      - valkey
+      rabbitmq:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+      valkey:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A tasks:celery_app inspect ping --timeout 5 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     deploy:
       replicas: 2
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
   worker-low:
     build:
       context: ..
       dockerfile: worker/Dockerfile.worker
       network: host
-    #container_name: worker-low
     profiles:
       - worker-low
     env_file:
@@ -33,11 +42,22 @@ services:
     environment:
       - CELERY_QUEUES=video.low,video.all
     depends_on:
-      - rabbitmq
-      - seaweedfs
-      - valkey
+      rabbitmq:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+      valkey:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A tasks:celery_app inspect ping --timeout 5 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     deploy:
       replicas: 2
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G

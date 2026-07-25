@@ -1,4 +1,4 @@
-loguru
-robotframework
-requests
-robotframework-requests
+loguru~=0.7
+robotframework~=7.1
+requests~=2.32
+robotframework-requests~=0.9
